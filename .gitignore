@@ -1,0 +1,35 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual env / local env
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# Runtime outputs
+runs/
+*.log
+
+# Datasets and training artifacts
+data/datasets/
+*.cache
+
+# Large model weights / checkpoints
+models/*.pt
+scripts/*.pt
+scripts/models/*.pt
+*.pth
+*.onnx
+
+# Third-party bundled source / archives
+X-AnyLabeling-main/
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db

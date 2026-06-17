@@ -1,0 +1,8 @@
+# configs/fruit.yaml
+# .. 表示回到根目录 (robotgame/)，然后进入 data/datasets
+path: ../data/datasets
+train: images/train
+val: images/val
+
+nc: 4
+names: ['apple', 'banana', 'grape', 'strawberry']
