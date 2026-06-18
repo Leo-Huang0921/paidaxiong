@@ -7,7 +7,7 @@ from typing import Any
 DEFAULT_CONFIG: dict[str, Any] = {
     "mode": "simulation",
     "camera": {"width": 640, "height": 480, "fps": 30, "min_valid_depth_mm": 150, "max_valid_depth_mm": 900},
-    "model": {"weights": "models/fruit_best.pt", "fallback_weights": "models/yolov8s.pt", "conf_threshold": 0.45, "class_names": ["apple", "banana", "strawberry", "grape"]},
+    "model": {"weights": "models/fruit_best.pt", "fallback_weights": "models/yolov8s.pt", "conf_threshold": 0.45, "class_names": ["apple", "banana", "grape", "strawberry"]},
     "robot": {
         "ip": "192.168.5.1", "dashboard_port": 29999, "connect_timeout_s": 2.0,
         "user": 0, "tool": 0, "speed_percent": 25, "accel_percent": 25,
