@@ -58,6 +58,7 @@ class MainWindow(QWidget):
         self.recording = False
         self.video_writer = None
         self.video_record_path = None
+        self.current_joint_angles: list[float] | None = None
         self.task_labels: list[QLabel] = []
         self.status_indicators: dict[str, QLabel] = {}
         self.timer = QTimer(self)
@@ -141,8 +142,8 @@ class MainWindow(QWidget):
             ("任务2 图像采集", [("保存图像", self.on_save_image), ("开始录制", self.on_toggle_recording)]),
             ("任务3 单目标识别", [("单次识别", self.on_detect_once)]),
             ("任务4 固定点位", [("定点测试", self.on_fixed_test)]),
-            ("任务5 坐标握手", [("机器人连接", self.on_connect_robot), ("计算抓取坐标", self.on_calculate_grasp)]),
-            ("任务6 单物料分拣", [("指令下发/执行抓取", self.on_execute_grasp)]),
+            ("任务5 坐标握手", [("机器人连接", self.on_connect_robot), ("计算抓取坐标", self.on_calculate_grasp), ("指令下发", self.on_send_command)]),
+            ("任务6 单物料分拣", [("执行抓取", self.on_execute_grasp)]),
             ("任务7 连续分拣", [("一键自动运行", self.on_auto_run)]),
         ]
         for idx, (title, buttons) in enumerate(tasks):
@@ -404,6 +405,15 @@ class MainWindow(QWidget):
 
         self.guard(run)
 
+    def on_send_command(self):
+        def run():
+            target = self.workflow.calculate_grasp()
+            self.refresh_target_info()
+            self.append_log("指令下发预览：将发送抓取位姿 " + str([round(v, 3) for v in target.base_pose]))
+            self.update_task(5, "已下发")
+
+        self.guard(run)
+
     def on_execute_grasp(self):
         def run():
             self.running_mode = "手动"
@@ -427,13 +437,16 @@ class MainWindow(QWidget):
         self.guard(run)
 
     def on_emergency_stop(self):
-        def run():
+        try:
             self.workflow.emergency_stop()
+        except Exception as exc:
+            self.append_log("急停错误：" + str(exc))
+        finally:
             self.suction_on = False
+            self.robot_ready = self.workflow.robot.enabled
             self.running_mode = "急停"
+            self.refresh_all_status()
             self.append_log("! 急停 STOP 已触发")
-
-        self.guard(run)
 
     def on_clear_log(self):
         self.log_box.clear()
@@ -510,10 +523,18 @@ class MainWindow(QWidget):
         pose = self.workflow.robot.current_pose
         self.tcp_pose_label.setText(f"TCP X/Y/Z：{pose[0]:.1f}, {pose[1]:.1f}, {pose[2]:.1f}\nTCP Rx/Ry/Rz：{pose[3]:.1f}, {pose[4]:.1f}, {pose[5]:.1f}")
         if self.workflow.robot.simulation:
-            joints = [0.0, -12.0, 38.0, 0.0, 52.0, 0.0]
-            self.joint_label.setText(f"J1：{joints[0]:.1f}°  J2：{joints[1]:.1f}°  J3：{joints[2]:.1f}°\nJ4：{joints[3]:.1f}°  J5：{joints[4]:.1f}°  J6：{joints[5]:.1f}°")
+            self.current_joint_angles = [0.0, -12.0, 38.0, 0.0, 52.0, 0.0]
         else:
-            self.joint_label.setText("J1：需接入反馈端口  J2：需接入反馈端口  J3：需接入反馈端口\nJ4：需接入反馈端口  J5：需接入反馈端口  J6：需接入反馈端口")
+            try:
+                self.current_joint_angles = self.workflow.robot.get_angles()
+            except Exception as exc:
+                self.current_joint_angles = None
+                self.append_log("获取J1~J6失败：" + str(exc))
+        if self.current_joint_angles is not None:
+            angles = self.current_joint_angles
+            self.joint_label.setText(f"J1：{angles[0]:.1f}°  J2：{angles[1]:.1f}°  J3：{angles[2]:.1f}°\nJ4：{angles[3]:.1f}°  J5：{angles[4]:.1f}°  J6：{angles[5]:.1f}°")
+        else:
+            self.joint_label.setText("J1：读取失败  J2：读取失败  J3：读取失败\nJ4：读取失败  J5：读取失败  J6：读取失败")
 
     def refresh_all_status(self) -> None:
         self.set_indicator("相机状态", self.camera_ready, "运行中" if self.camera_ready else "未启动")
@@ -591,13 +612,12 @@ class MainWindow(QWidget):
     def to_pixmap(self, image: np.ndarray, target_label: QLabel, is_bgr: bool = True) -> QPixmap:
         if is_bgr:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        h, w = image.shape[:2]
-        qimage = QImage(image.data, w, h, image.strides[0], QImage.Format_RGB888)
+        height, width = image.shape[:2]
+        qimage = QImage(image.data, width, height, image.strides[0], QImage.Format_RGB888)
         target_size = target_label.contentsRect().size()
         if target_size.width() <= 0 or target_size.height() <= 0:
             target_size = target_label.size()
         return QPixmap.fromImage(qimage).scaled(target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-
 
 
 def main() -> int:

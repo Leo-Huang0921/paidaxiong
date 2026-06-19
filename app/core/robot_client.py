@@ -28,10 +28,7 @@ class DobotClient:
             return RobotReply(0, [], "0,{},Connect(simulation);")
         self.close()
         robot_cfg = self.config["robot"]
-        self.sock = socket.create_connection(
-            (robot_cfg["ip"], int(robot_cfg["dashboard_port"])),
-            timeout=float(robot_cfg["connect_timeout_s"]),
-        )
+        self.sock = socket.create_connection((robot_cfg["ip"], int(robot_cfg["dashboard_port"])), timeout=float(robot_cfg["connect_timeout_s"]))
         self.connected = True
         return RobotReply(0, [], "0,{},Connect();")
 
@@ -55,6 +52,10 @@ class DobotClient:
             lower = command.lower()
             if lower.startswith("enablerobot"):
                 self.enabled = True
+            if lower.startswith("disablerobot") or lower.startswith("emergencystop"):
+                self.enabled = False
+            if lower.startswith(("stop", "pause")):
+                return RobotReply(0, [], f"0,{{}},{command};")
             if lower.startswith(("movl", "movj")):
                 pose = self._parse_pose(command)
                 if pose:
@@ -62,6 +63,9 @@ class DobotClient:
                 return RobotReply(0, [str(len(self.sent_commands))], f"0,{{{len(self.sent_commands)}}},{command};")
             if lower.startswith("getpose"):
                 values = [f"{value:.3f}" for value in self.current_pose]
+                return RobotReply(0, values, f"0,{{{','.join(values)}}},{command};")
+            if lower.startswith("getangle"):
+                values = ["0.000", "-12.000", "38.000", "0.000", "52.000", "0.000"]
                 return RobotReply(0, values, f"0,{{{','.join(values)}}},{command};")
             return RobotReply(0, [], f"0,{{}},{command};")
         if not self.connected or self.sock is None:
@@ -111,6 +115,12 @@ class DobotClient:
             self.current_pose = [float(value) for value in reply.values[:6]]
         return list(self.current_pose)
 
+    def get_angles(self) -> list[float]:
+        reply = self.require_ok(self.send("GetAngle()"), "获取关节角")
+        if len(reply.values) >= 6:
+            return [float(value) for value in reply.values[:6]]
+        raise RuntimeError(f"获取关节角返回值异常: {reply.raw}")
+
     def movl(self, pose: list[float], speed: int | None = None, accel: int | None = None) -> RobotReply:
         robot_cfg = self.config["robot"]
         speed = int(speed or robot_cfg["speed_percent"])
@@ -118,10 +128,7 @@ class DobotClient:
         user = int(robot_cfg.get("user", 0))
         tool = int(robot_cfg.get("tool", 0))
         pose_text = ",".join(f"{value:.3f}" for value in pose)
-        return self.require_ok(
-            self.send(f"MovL(pose={{{pose_text}}},user={user},tool={tool},a={accel},v={speed},cp=0)"),
-            "直线运动",
-        )
+        return self.require_ok(self.send(f"MovL(pose={{{pose_text}}},user={user},tool={tool},a={accel},v={speed},cp=0)"), "直线运动")
 
     def movj(self, pose: list[float], speed: int | None = None, accel: int | None = None) -> RobotReply:
         robot_cfg = self.config["robot"]
@@ -130,15 +137,38 @@ class DobotClient:
         user = int(robot_cfg.get("user", 0))
         tool = int(robot_cfg.get("tool", 0))
         pose_text = ",".join(f"{value:.3f}" for value in pose)
-        return self.require_ok(
-            self.send(f"MovJ(pose={{{pose_text}}},user={user},tool={tool},a={accel},v={speed},cp=0)"),
-            "关节运动",
-        )
+        return self.require_ok(self.send(f"MovJ(pose={{{pose_text}}},user={user},tool={tool},a={accel},v={speed},cp=0)"), "关节运动")
 
     def suction(self, on: bool) -> RobotReply:
-        index = int(self.config["robot"].get("suction_tool_do", 1))
-        status = 1 if on else 0
-        return self.require_ok(self.send(f"ToolDOInstant({index},{status})"), "吸盘控制")
+        robot_cfg = self.config["robot"]
+        status = int(robot_cfg.get("suction_on_level", 1) if on else robot_cfg.get("suction_off_level", 0))
+        io_type = str(robot_cfg.get("suction_io_type", "both")).lower()
+        replies: list[RobotReply] = []
+        if io_type in {"tool_do", "tool", "both"}:
+            index = int(robot_cfg.get("suction_tool_do", 1))
+            replies.append(self.require_ok(self.send(f"ToolDOInstant({index},{status})"), "末端吸盘控制"))
+        if io_type in {"do", "cabinet_do", "controller_do", "both"}:
+            index = int(robot_cfg.get("suction_do", robot_cfg.get("suction_tool_do", 1)))
+            replies.append(self.require_ok(self.send(f"DOInstant({index},{status})"), "控制柜吸盘控制"))
+        if not replies:
+            raise RuntimeError(f"未知吸盘IO类型: {io_type}")
+        return replies[-1]
+
+    def stop_motion(self) -> RobotReply:
+        return self.require_ok(self.send("Stop()"), "停止运动")
+
+    def pause_motion(self) -> RobotReply:
+        return self.require_ok(self.send("Pause()"), "暂停运动")
+
+    def emergency_stop(self) -> RobotReply:
+        reply = self.require_ok(self.send("EmergencyStop(1)"), "紧急停止")
+        self.enabled = False
+        return reply
+
+    def disable(self) -> RobotReply:
+        reply = self.require_ok(self.send("DisableRobot()"), "机器人下使能")
+        self.enabled = False
+        return reply
 
     def build_grasp_sequence(self, grasp_pose: list[float], label: str) -> list[tuple[str, list[float] | bool]]:
         robot_cfg = self.config["robot"]

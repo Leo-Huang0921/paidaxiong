@@ -68,9 +68,9 @@ class CompetitionWorkflow:
     def _depth_at(self, u: int, v: int) -> float:
         if self.frame is None:
             raise RuntimeError("没有相机帧")
-        h, w = self.frame.depth_mm.shape[:2]
-        x1, x2 = max(0, u - 3), min(w, u + 4)
-        y1, y2 = max(0, v - 3), min(h, v + 4)
+        height, width = self.frame.depth_mm.shape[:2]
+        x1, x2 = max(0, u - 3), min(width, u + 4)
+        y1, y2 = max(0, v - 3), min(height, v + 4)
         roi = self.frame.depth_mm[y1:y2, x1:x2]
         valid = roi[np.isfinite(roi) & (roi > 0)]
         if valid.size == 0:
@@ -89,9 +89,15 @@ class CompetitionWorkflow:
 
     def fixed_point_test(self) -> None:
         self._ensure_robot_ready()
-        pose = list(self.config["robot"]["fixed_test_pose"])
-        self.robot.movj(pose)
-        self.log(f"固定点位测试完成：{pose}")
+        grasp_pose = list(self.config["robot"]["fixed_test_pose"])
+        bins = self.config["robot"].get("bins", {})
+        if not bins:
+            raise RuntimeError("未配置任何置物盒坐标，无法完成定点抓取测试")
+        target_label = next(iter(bins.keys()))
+        sequence = self.robot.build_grasp_sequence(grasp_pose, target_label)
+        self.log(f"定点抓取测试开始：固定抓取点={grasp_pose}，目标置物盒={target_label}")
+        self._execute_sequence(sequence)
+        self.log(f"定点抓取测试完成：已从固定点抓取并放置到 {target_label} 置物盒")
 
     def calculate_grasp(self) -> TargetResult:
         if self.current_target is None:
@@ -114,15 +120,19 @@ class CompetitionWorkflow:
         if target.detection.label not in self.config["robot"]["bins"]:
             raise RuntimeError(f"未配置 {target.detection.label} 的料盒坐标")
         sequence = self.robot.build_grasp_sequence(target.base_pose, target.detection.label)
+        self._execute_sequence(sequence)
+        self.log(f"单物料分拣完成：{target.detection.label}")
+
+    def _execute_sequence(self, sequence: list[tuple[str, list[float] | bool]]) -> None:
         for action, value in sequence:
             if action == "movj":
-                self.robot.movj(value)  # type: ignore[arg-type]
+                self.robot.movj(value)
             elif action == "movl":
-                self.robot.movl(value)  # type: ignore[arg-type]
+                self.robot.movl(value)
             elif action == "suction":
                 self.robot.suction(bool(value))
+                self.log("吸盘得电吸取" if value else "吸盘断电释放")
             self.log(f"执行：{action} {value}")
-        self.log(f"单物料分拣完成：{target.detection.label}")
 
     def auto_run(self) -> int:
         self._ensure_robot_ready()
@@ -150,7 +160,24 @@ class CompetitionWorkflow:
             self.robot.enable()
 
     def emergency_stop(self) -> None:
+        errors: list[str] = []
         try:
-            self.robot.suction(False)
+            if self.robot.connected:
+                try:
+                    self.robot.suction(False)
+                except Exception as exc:
+                    errors.append(f"关闭吸盘失败: {exc}")
+                try:
+                    mode = str(self.config["robot"].get("emergency_stop_mode", "stop")).lower()
+                    if mode == "emergency_stop":
+                        self.robot.emergency_stop()
+                        self.log("急停触发：已发送 EmergencyStop(1)，机器人会下使能并报警")
+                    else:
+                        self.robot.stop_motion()
+                        self.log("急停触发：已发送 Stop()，运动队列已请求停止")
+                except Exception as exc:
+                    errors.append(f"停止运动失败: {exc}")
         finally:
-            self.log("急停触发：已尝试关闭吸盘，运动队列需在示教器/控制器侧确认停止")
+            self.robot.enabled = False
+            if errors:
+                self.log("；".join(errors))

@@ -18,6 +18,7 @@ robot:
   ip: 192.168.5.1
   dashboard_port: 29999
   connect_timeout_s: 2.0
+  request_control_before_enable: true
   user: 0
   tool: 0
   speed_percent: 25
@@ -25,6 +26,11 @@ robot:
   safe_z_mm: 180.0
   grasp_clearance_mm: 18.0
   suction_tool_do: 1
+  suction_do: 1
+  suction_io_type: both # tool_do / do / both，ES01接控制柜DO时用do或both
+  suction_on_level: 1
+  suction_off_level: 0
+  emergency_stop_mode: stop # stop / emergency_stop
   home_pose: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
   fixed_test_pose: [289.1093, -266.8951, 98.6003, 178.0137, -0.8, -34.75]
   bins:
@@ -35,13 +41,11 @@ robot:
 
 calibration:
   hand_eye_yaml: configs/20260610.yaml
-  # D435 640x480 近似内参；现场会优先读取 RealSense intrinsics
   camera_matrix:
     fx: 615.0
     fy: 615.0
     cx: 320.0
     cy: 240.0
-  # 相机到末端 Tend_camera，默认读取 hand_eye_yaml；失败时用此矩阵
   transform_camera_to_gripper:
     - [0.7218742278, 0.6919286206, -0.0115057948, -72.7322748581]
     - [-0.6919621455, 0.7219324330, 0.0013969538, -38.3275375922]
