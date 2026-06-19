@@ -12,7 +12,7 @@ model:
   weights: models/fruit_best.pt
   fallback_weights: models/yolov8s.pt
   conf_threshold: 0.45
-  class_names: [apple, banana, strawberry, grape]
+  class_names: [apple, banana, grape, strawberry]
 
 robot:
   ip: 192.168.5.1

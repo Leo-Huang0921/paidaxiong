@@ -17,6 +17,12 @@ runs/
 
 # Datasets and training artifacts
 data/datasets/
+data/datasets_modified/
+data/labelimg_review_boxed_modified/
+data/full_annotation_review_sheets/
+data/annotation_audit_report.csv
+picture/
+*.mp4
 *.cache
 
 # Large model weights / checkpoints

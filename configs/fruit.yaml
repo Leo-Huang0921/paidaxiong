@@ -1,6 +1,6 @@
 # configs/fruit.yaml
-# .. 表示回到根目录 (robotgame/)，然后进入 data/datasets
-path: ../data/datasets
+# 训练数据集目录，相对本配置文件所在目录
+path: ../data/datasets_modified
 train: images/train
 val: images/val
 
